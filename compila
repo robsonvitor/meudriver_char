@@ -1,0 +1,11 @@
+#!/bin/bash
+
+rmmod meudriver 2> /dev/null
+
+make clean
+
+make -C /lib/modules/$(uname -r)/build M=$PWD modules
+
+[[ -a meudriver.ko ]] && insmod meudriver.ko
+
+[[ -a tool.c ]] && cc tool.c
