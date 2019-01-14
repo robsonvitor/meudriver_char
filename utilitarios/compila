@@ -10,4 +10,4 @@ make -C /lib/modules/$(uname -r)/build M=$PWD modules
 
 [[ -f tool.c ]] && cc tool.c -o tool.o
 
-#make clean
+make clean
