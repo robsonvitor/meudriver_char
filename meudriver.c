@@ -16,68 +16,54 @@ static struct cdev dummy_cdev;
 static char   message[256] = {0};           ///< Memory for the string that is passed from userspace
 static short  size_of_message;
 
-int abre(struct inode * inode, struct file * filp) {
-    pr_info("## meudriver - abre! ##\n");
 
+/*##################################################################*/
+
+static struct file* filp = NULL;
+
+struct file* file_open(const char* path, int flags, int rights)
+{
+    int err = 0;
+    struct file* filp = NULL;
+
+
+    /* Para acessar uma região de memória que está além do limite de Endereço Virtual do Espaço do Usuário
+    (ou seja, caindo na região de Endereço Virtual do Espaço do Kernel), você primeiro armazena o limite atual. */
     mm_segment_t oldfs;
-    int ret;
-
     oldfs = get_fs();
+
+    /* Define o limite como o do Kernel - 4 GB/*/
     set_fs(get_ds());
-    filp = filp_open("/dev/ttyACM0", O_RDWR, 0666);
-    
-    if(IS_ERR(filp)){
-        pr_info("meudriver - Nao foi possivel abrir dispositivo!!");
-    }else{
-        pr_info("meudriver - dispositivo aberto com sucesso!");
-    }
+
+
+    /* O get_fs() irá recuperar este limite e o set_fs() irá defini-lo com um valor */
+    /* Operações em memória (Ex: - Ler de um buffer que está no espaço do kernel de um contexto de usuário através de uma system call)*/
+    filp = filp_open(path, flags, rights);
+
+    /* Define o limite de endereço de retorno para o limite original que foi armazenado na variável old_fs */
     set_fs(oldfs);
 
+    if (IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+        return NULL;
+    }
+
+    return filp;
+}
+
+static int abre(struct inode *inode, struct file *file)
+{
+    filp = file_open("/dev/ttyACM0", O_RDWR, 0666);
     return 0;
 }
 
-int fecha(struct inode * inode, struct file * filp) {
-    pr_info("## meudriver - fecha! ##\n");
-    return 0;
-}
-
-ssize_t leitura (struct file *filp, char __user * buf, size_t count,
-                 loff_t * offset) {
-
-    pr_info("## meudriver - leitura! ##\n");
-
-    int error_count;
-    error_count = 0;
-    error_count = copy_to_user(buf, message, size_of_message);
-
-   if (error_count==0){
-      pr_info("meudriver: Copiados %d caracteres para usuario\n", size_of_message);
-      return (size_of_message=0);
-   }
-   else {
-      pr_info("meudriver: Falha ao copiar %d caracteres para usuario\n", error_count);
-      return -EFAULT;
-   }
-
-   return 0;
-}
-
-
-ssize_t escrita(struct file * filp, const char __user * buf, size_t count, loff_t * offset) {
-
-    pr_info("## meudriver - escrita! ##\n");
-    sprintf(message, "%s", buf);                // Coloca na variavel message o conteudo lido em buf
-    size_of_message = strlen(message);                // armazena o tamanho da string em size_of_message
-    pr_info("meudriver - %s", message);
-    pr_info("meudriver: %zu caracteres recebidos do usuario\n", count);
-    return count;
-}
-
+/*##################################################################*/
 struct file_operations meudriver_fops = {
-    open:       abre,
-    release:    fecha,
-    read:       leitura,
-    write:      escrita,
+owner:       THIS_MODULE,
+open:       abre,
+// release:    fecha,
+// read:       leitura,
+// write:      escrita,
 };
 
 struct miscdevice meudriver_device = {
@@ -109,7 +95,7 @@ static int __init inicializa_driver(void) {
 
     /* Initialize the char device and tie a file_operations to it */
     cdev_init(&dummy_cdev, &meudriver_fops);
-    dummy_cdev.owner = THIS_MODULE;
+    // dummy_cdev.owner = THIS_MODULE;
     /* Now make the device live for the users to access */
     cdev_add(&dummy_cdev, devt, 1);
 

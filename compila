@@ -6,6 +6,8 @@ make clean
 
 make -C /lib/modules/$(uname -r)/build M=$PWD modules
 
-[[ -a meudriver.ko ]] && insmod meudriver.ko
+[[ -f meudriver.ko ]] && insmod meudriver.ko
 
-[[ -a tool.c ]] && cc tool.c
+[[ -f tool.c ]] && cc tool.c -o tool.o
+
+#make clean

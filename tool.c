@@ -22,7 +22,7 @@ static char receive[BUFFER_LENGTH];     ///< The receive buffer from the LKM
 int main(){
    int ret, fd;
    char stringToSend[BUFFER_LENGTH];
-   printf("Starting device test code example...\n");
+   printf("Ferramenta para escrever em ttyACM0\n");
    fd = open("/dev/meudriver_char", O_RDWR);             // Open the device with read/write access
    if (fd < 0){
       perror("Failed to open the device...");
@@ -30,25 +30,25 @@ int main(){
    }
 
    while(1){
-      printf("Type in a short string to send to the kernel module:\n");
+      printf("Digite o codigo: ");
       scanf("%[^\n]%*c", stringToSend);                // Read in a string (with spaces)
-      printf("Writing message to the device [%s].\n", stringToSend);
+      printf("Escrevendo mensagem na porta serial: [%s].\n", stringToSend);
       ret = write(fd, stringToSend, strlen(stringToSend)); // Send the string to the LKM
       if (ret < 0){
-         perror("Failed to write the message to the device.");
+         perror("Falha ao escrever mensagem no driver.");
          return errno;
       }
 
-      printf("Press ENTER to read back from the device...\n");
-      getchar();
+      // printf("Press ENTER to read back from the device...\n");
+      // getchar();
 
-      printf("Reading from the device...\n");
-      ret = read(fd, receive, BUFFER_LENGTH);        // Read the response from the LKM
-      if (ret < 0){
-         perror("Failed to read the message from the device.");
-         return errno;
-      }
-      printf("The received message is: [%s]\n", receive);
+      // printf("Reading from the device...\n");
+      // ret = read(fd, receive, BUFFER_LENGTH);        // Read the response from the LKM
+      // if (ret < 0){
+      //    perror("Failed to read the message from the device.");
+      //    return errno;
+      // }
+      // printf("The received message is: [%s]\n", receive);
    }
 
    printf("End of the program\n");
