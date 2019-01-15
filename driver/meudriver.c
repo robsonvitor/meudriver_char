@@ -97,12 +97,14 @@ static int __init inicializa_driver(void) {
     int error;
     dev_t devt = 0;
 
-    /* Get a range of minor numbers (starting with 0) to work with */
+    /* Solicita ao kernel a alocacao do dispositivo */
     error = alloc_chrdev_region(&devt, 0, 1, "meudriver_char");
     if (error < 0) {
         pr_err("meudriver - Nao foi possivel alocar major\n");
         return error;
     }
+
+    //Extrai o major de devt
     major = MAJOR(devt);
     pr_info("meudriver - meudriver_char major number = %d\n", major);
 
