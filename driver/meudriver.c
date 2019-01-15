@@ -9,19 +9,27 @@
 #include <linux/string.h>
 #include <asm/uaccess.h>
 
-static unsigned int major; /* variavel para o MAJOR do driver */
+static unsigned int major;
 static struct class *meudriver_classe;
 static struct cdev meudriver_cdev;
-
-
-/*##################################################################*/
-
 static struct file* filp = NULL;
 
-struct file* file_open(const char* path, int flags, int rights){
-    int err = 0;
-    struct file* filp = NULL;
+/*
 
+Para os metodos de tratamento de acesso a dados entre kernel space e user space, precisa isolar e definidir os limites:
+mm_segment_t oldfs -> addr_limit
+oldfs = get_fs() -> KERNEL_DS
+set_fs(get_ds()) ->  USER_DS
+set_fs(oldfs) -> KERNEL_DS
+
+get_fs returns the current segment descriptor stored in FS.
+get_ds returns the segment descriptor associated to kernel space, currently stored in DS.
+set_fs stores a descriptor into FS, so it will be used for data transfer instructions.
+*/
+
+/* metodo para abertura da comunicacao com a porta serial, abre o driver de caracter /dev/ttyACMO */
+struct file* abre_arquivo(const char* path, int flags, int rights){
+    int erro = 0;
     mm_segment_t oldfs;
     oldfs = get_fs();
     set_fs(get_ds());
@@ -29,57 +37,45 @@ struct file* file_open(const char* path, int flags, int rights){
     set_fs(oldfs);
 
     if (IS_ERR(filp)) {
-        err = PTR_ERR(filp);
+        erro = PTR_ERR(filp);
         return NULL;
     }
 
     return filp;
 }
 
-void file_close(struct file* file){
+/* Fecha o arquivo */
+void fecha_arquivo(struct file* file){
     filp_close(file, NULL);
 }
 
-int file_read(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size){
+int escreve_arquivo(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size){
+    int count;
     mm_segment_t oldfs;
-    int ret;
-
     oldfs = get_fs();
     set_fs(get_ds());
-    ret = vfs_read(file, data, size, &offset);
+    count = vfs_write(file, data, size, &offset);
     set_fs(oldfs);
 
-    return ret;
-}
-
-int file_write(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size){
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-    ret = vfs_write(file, data, size, &offset);
-    set_fs(oldfs);
-
-    return ret;
+    return count;
 }
 
 static int abre(struct inode *inode, struct file *file){
-    filp = file_open("/dev/ttyACM0", O_RDWR, 0666);
+    filp = abre_arquivo("/dev/ttyACM0", O_RDWR, 0666);
     return 0;
 }
 
-static int libera(struct inode *inodep, struct file *filp){
-    file_close(filp);
+static int libera(struct inode *inode, struct file *filp){
+    fecha_arquivo(filp);
     return 0;
 }
 
 static ssize_t escrita(struct file *file, const char __user *buf,size_t len, loff_t *ppos){
-    ssize_t recv = file_write(filp, *ppos, buf, len);
-    return recv;
+    ssize_t retorno = escreve_arquivo(filp, *ppos, buf, len);
+    return retorno;
 }
 
-/*##################################################################*/
+/* Mapeia as operacoes do kernel com funcoes do driver */
 struct file_operations meudriver_fops = {
     owner:       THIS_MODULE,
     open:       abre,
@@ -87,28 +83,25 @@ struct file_operations meudriver_fops = {
     write:      escrita,
 };
 
-struct miscdevice meudriver_device = {
-    .name = "meudriver",
-    .fops = &meudriver_fops,
-};
-
+/* metodo executado ao carregar driver para o kernel */
 static int __init inicializa_driver(void) {
     struct device *meudriver_device;
-    int error;
+    int erro;
     dev_t devt = 0;
 
     /* Solicita ao kernel a alocacao do dispositivo */
-    error = alloc_chrdev_region(&devt, 0, 1, "meudriver_char");
-    if (error < 0) {
+    erro = alloc_chrdev_region(&devt, 0, 1, "meudriver_char");
+    if (erro < 0) {
         pr_err("meudriver - Nao foi possivel alocar major\n");
-        return error;
+        return erro;
     }
 
-    //Extrai o major de devt
+    /* Extrai o major de devt */
     major = MAJOR(devt);
+
     pr_info("meudriver - meudriver_char major number = %d\n", major);
 
-    /* Create device class, visible in /sys/class */
+    /* Cria a classe do dispositivo /sys/class/meudriver_char_class */
     meudriver_classe = class_create(THIS_MODULE, "meudriver_char_class");
     if (IS_ERR(meudriver_classe)) {
         pr_err("meudriver - Erro ao criar classe de caracter.\n");
@@ -116,16 +109,14 @@ static int __init inicializa_driver(void) {
         return PTR_ERR(meudriver_classe);
     }
 
-    /* Initialize the char device and tie a file_operations to it */
+    /* Inicializa o driver com os parametros de meudriver_fops */
     cdev_init(&meudriver_cdev, &meudriver_fops);
-    /* Now make the device live for the users to access */
+
+    /* Associa o dispositivo com os devidos numeros de  char para que usuarios tenham acesso */
     cdev_add(&meudriver_cdev, devt, 1);
 
-    meudriver_device = device_create(meudriver_classe,
-                                     NULL,   /* no parent device */
-                                     devt,    /* associated dev_t */
-                                     NULL,   /* no additional data */
-                                     "meudriver_char");  /* device name */
+    /* Cria e registra o dispositivo (classe,nenhum driver relacionado,numeros "major, minor", dados adicionais, nome do driver)*/
+    meudriver_device = device_create(meudriver_classe,NULL,devt,NULL,"meudriver_char");
 
     if (IS_ERR(meudriver_device)) {
         pr_err("meudriver - Erro ao criar o dispositivo.\n");
@@ -138,6 +129,7 @@ static int __init inicializa_driver(void) {
     return 0;
 }
 
+/* Metodo executado ao descarregar driver do kernel */
 static void __exit remove_driver(void) {
     unregister_chrdev_region(MKDEV(major, 0), 1);
     device_destroy(meudriver_classe, MKDEV(major, 0));
@@ -147,9 +139,11 @@ static void __exit remove_driver(void) {
     pr_info("meudriver - O driver foi removido!\n");
 }
 
+
+/* Mapeia funcoes de inicializacao e remocao do driver */
 module_init(inicializa_driver);
 module_exit(remove_driver);
 
-
+/* Informacoes do driver */
 MODULE_DESCRIPTION("Driver de caracter");
 MODULE_LICENSE("GPL");
